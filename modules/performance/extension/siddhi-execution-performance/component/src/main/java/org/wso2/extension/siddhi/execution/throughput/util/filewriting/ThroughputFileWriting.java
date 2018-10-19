@@ -30,36 +30,37 @@ import java.io.Writer;
 public class ThroughputFileWriting implements Runnable {
     private final Logger log = Logger.getLogger(ThroughputFileWriting.class);
     private long firstTupleTime;
-    private int recordWindow;
-    private long currentTime;
-    private long value;
-    private long eventCountTotal;
+    private int recordWindowSize;
+    private long windowExpiredTime;
+    private long timeSpentInWindow;
+    private long totalEventCount;
     private long eventCount;
     private Writer fstream;
 
-    public ThroughputFileWriting(long firstTupleTime, int recordWindow, long eventCountTotal, long
-            eventCount, long currentTime, long value, Writer fstream) {
+    public ThroughputFileWriting(long firstTupleTime, int recordWindowSize, long totalEventCount, long eventCount,
+                                 long windowExpiredTime, long timeSpentInWindow, Writer fstream) {
         this.firstTupleTime = firstTupleTime;
-        this.recordWindow = recordWindow;
-        this.eventCountTotal = eventCountTotal;
+        this.recordWindowSize = recordWindowSize;
+        this.totalEventCount = totalEventCount;
         this.eventCount = eventCount;
-        this.currentTime = currentTime;
-        this.value = value;
+        this.windowExpiredTime = windowExpiredTime;
+        this.timeSpentInWindow = timeSpentInWindow;
         this.fstream = fstream;
     }
 
     @Override public void run() {
         try {
             fstream.write(
-                    (eventCountTotal / recordWindow) + "," + ((eventCount * 1000) / value) + ","
-                            +
-                            (eventCountTotal * 1000 / (currentTime - firstTupleTime)) + "," +
-                            ((currentTime - firstTupleTime) / 1000f) + ","
-                            + "" + eventCountTotal + "," + currentTime);
+                    (totalEventCount / recordWindowSize) + "," +
+                            ((eventCount * 1000) / timeSpentInWindow) + "," +
+                            (totalEventCount * 1000 / (windowExpiredTime - firstTupleTime)) + "," +
+                            ((windowExpiredTime - firstTupleTime) / 1000f) + "," +
+                            totalEventCount + "," +
+                            windowExpiredTime);
             fstream.write("\r\n");
             fstream.flush();
         } catch (IOException ex) {
-            log.error("Error while writing into the file" + ex.getMessage(), ex);
+            log.error("Error while writing into the file " + ex.getMessage(), ex);
         }
     }
 }

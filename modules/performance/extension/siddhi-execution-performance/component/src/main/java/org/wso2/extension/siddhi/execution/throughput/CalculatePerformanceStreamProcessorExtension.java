@@ -100,14 +100,14 @@ import java.util.concurrent.ExecutorService;
 )
 public class CalculatePerformanceStreamProcessorExtension extends StreamProcessor {
     private static final Logger log = Logger.getLogger(CalculatePerformanceStreamProcessorExtension.class);
-    private static final int RECORDWINDOW = 5;
+    private static final int RECORD_WINDOW_SIZE = 5;
     private static final Histogram histogram = new Histogram(2);
-    private static final Histogram histogram2 = new Histogram(2);
+    private static final Histogram windowHistogram = new Histogram(2);
     private static long firstTupleTime = -1;
     private static String logDir = "./performance-results";
-    private static long eventCountTotal = 0;
+    private static long totalEventCount = 0;
     private static long eventCount = 0;
-    private static long timeSpent = 0;
+    private static long totalWindowEventTime = 0;
     private static long totalTimeSpent = 0;
     private static long outputFileTimeStamp;
     private static long startTime = -1;
@@ -136,7 +136,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
             fstream.flush();
             fstream.close();
         } catch (IOException e) {
-            log.error("Error when writing performance information" + e.getMessage(), e);
+            log.error("Error when writing performance information : " + e.getMessage(), e);
         }
         return 0;
     }
@@ -170,7 +170,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                 }
             }
         } catch (IOException e) {
-            log.error("Error when reading the sequence number from sequence-number.txt" + e.getMessage(), e);
+            log.error("Error when reading the sequence number from sequence-number.txt : " + e.getMessage(), e);
         } finally {
             try {
                 if (br != null) {
@@ -237,7 +237,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
             }
 
             if (!(attributeExpressionExecutors[1] instanceof ConstantExpressionExecutor)) {
-                throw new SiddhiAppValidationException("second parameter has to be constant but found" + this
+                throw new SiddhiAppValidationException("Second parameter has to be constant but found" + this
                         .attributeExpressionExecutors[1].getClass().getCanonicalName());
             }
 
@@ -300,51 +300,44 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                 try {
                     long currentTime = System.currentTimeMillis();
                     long iijTimestamp = (Long) (attributeExpressionExecutors[0].execute(streamEvent));
-                    timeSpent += (currentTime - iijTimestamp);
+                    totalWindowEventTime += (currentTime - iijTimestamp);
                     eventCount++;
-                    eventCountTotal++;
+                    totalEventCount++;
 
-                    if (eventCount >= RECORDWINDOW) {
-                        totalTimeSpent += timeSpent;
-                        histogram2.recordValue((timeSpent));
-                        histogram.recordValue(timeSpent);
+                    if (eventCount >= RECORD_WINDOW_SIZE) {
+                        totalTimeSpent += totalWindowEventTime;
+                        windowHistogram.recordValue((totalWindowEventTime));
+                        histogram.recordValue(totalWindowEventTime);
                         if (!flag) {
                             flag = true;
-                            fstream.write("id,Average "
-                                                  + "latency "
-                                                  +
-                                                  "per event in this window(ms), Entire Average latency per "
-                                                  + "event for the run(ms), Total "
-                                                  + "number"
-                                                  + " of "
-                                                  +
-                                                  "events received (non-atomic), timespent(in one window),"
-                                                  + "totaltimespent),"
-                                                  + "AVG latency from start (90),"
-                                                  + "" + "AVG latency from start(95), "
-                                                  + "AVG latency from start "
-                                                  + "(99)," + "AVG latency in this "
-                                                  + "window(90)," + "AVG latency in this window(95),"
-                                                  + "AVG latency "
-                                                  + "in this window(99)");
+                            fstream.write("id,Average latency per event in this window(ms)," +
+                                    "Entire Average latency per event for the run(ms)," +
+                                    "Total number of events received (non-atomic)," +
+                                    "timespent(in one window)," +
+                                    "totaltimespent)," +
+                                    "AVG latency from start (90)," +
+                                    "AVG latency from start(95)," +
+                                    "AVG latency from start(99)," +
+                                    "AVG latency in this window(90)," +
+                                    "AVG latency in this window(95)," +
+                                    "AVG latency in this window(99)");
                             fstream.write("\r\n");
                             fstream.flush();
                         }
-                        long time = timeSpent;
+                        long time = totalWindowEventTime;
                         long totalTime = totalTimeSpent;
-                        long event = eventCount;
-                        long totalEvent = eventCountTotal;
+                        long windowEventCount = eventCount;
+                        long totalEvent = totalEventCount;
 
                         LatencyFileWriting file =
-                                new LatencyFileWriting(RECORDWINDOW, totalEvent, event,
-                                                       time, totalTime, histogram,
-                                                       histogram2, fstream);
+                                new LatencyFileWriting(RECORD_WINDOW_SIZE, totalEvent, windowEventCount, time,
+                                        totalTime, histogram, windowHistogram, fstream);
 
                         executorService.submit(file);
-                        histogram2.reset();
+                        windowHistogram.reset();
                         eventCount = 0;
-                        timeSpent = 0;
-                        if (!exitFlag && eventCountTotal == 100000000000L) {
+                        totalWindowEventTime = 0;
+                        if (!exitFlag && totalEventCount == 100000000000L) {
                             log.info("Exit flag set");
                             setCompletedFlag(sequenceNumber);
                             exitFlag = true;
@@ -352,7 +345,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                     }
 
                 } catch (Exception ex) {
-                    log.error("Error while consuming event" + ex.getMessage(), ex);
+                    log.error("Error while consuming event : " + ex.getMessage(), ex);
                 }
             }
         }
@@ -372,11 +365,14 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
             while (streamEventChunk.hasNext()) {
                 streamEventChunk.next();
                 try {
+                    if (startTime == -1) {
+                        startTime = System.currentTimeMillis();
+                    }
                     eventCount++;
-                    eventCountTotal++;
-                    if (eventCount >= RECORDWINDOW) {
+                    totalEventCount++;
+                    if (eventCount >= RECORD_WINDOW_SIZE) {
                         long currentTime = System.currentTimeMillis();
-                        long value = currentTime - startTime;
+                        long timeSpentInWindow = currentTime - startTime;
 
                         if (!flag) {
                             flag = true;
@@ -388,17 +384,16 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                         }
 
                         long event = eventCount;
-                        long totalEvent = eventCountTotal;
+                        long totalEvent = totalEventCount;
                         ThroughputFileWriting
-                                file = new ThroughputFileWriting(firstTupleTime, RECORDWINDOW, totalEvent,
-                                                                 event, currentTime, value, fstream
-                        );
+                                file = new ThroughputFileWriting(firstTupleTime, RECORD_WINDOW_SIZE, totalEvent,
+                                                                 event, currentTime, timeSpentInWindow, fstream);
 
                         executorService.submit(file);
                         startTime = -1;
                         eventCount = 0;
 
-                        if (!exitFlag && eventCountTotal == 100000000000L) {
+                        if (!exitFlag && totalEventCount == 100000000000L) {
                             log.info("Exit flag set");
                             setCompletedFlag(sequenceNumber);
                             exitFlag = true;
@@ -430,18 +425,20 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                         startTime = System.currentTimeMillis();
                     }
 
-                    long currentTime = System.currentTimeMillis();
+                    long windowExpiredTime = System.currentTimeMillis();
                     long iijTimestamp = (Long) (attributeExpressionExecutors[0].execute(streamEvent));
-                    timeSpent += (currentTime - iijTimestamp);
+                    // Calculating time spent for each event belongs to the current window
+                    totalWindowEventTime += (windowExpiredTime - iijTimestamp);
                     eventCount++;
-                    eventCountTotal++;
+                    totalEventCount++;
 
-                    if (eventCount == RECORDWINDOW) {
-                        currentTime = System.currentTimeMillis();
-                        long value = currentTime - startTime;
-                        totalTimeSpent += timeSpent;
-                        histogram2.recordValue(timeSpent);
-                        histogram.recordValue(timeSpent);
+                    if (eventCount == RECORD_WINDOW_SIZE) {
+                        windowExpiredTime = System.currentTimeMillis();
+                        long timeSpentInWindow = windowExpiredTime - startTime;
+                        // Calculating total time spent for all the events that have been arrived yet.
+                        totalTimeSpent += totalWindowEventTime;
+                        windowHistogram.recordValue(totalWindowEventTime);
+                        histogram.recordValue(totalWindowEventTime);
 
                         if (!flag) {
                             flag = true;
@@ -463,24 +460,24 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                             fstream.flush();
                         }
 
-                        long event = eventCount;
-                        long totalEvent = eventCountTotal;
-                        long time = timeSpent;
+                        long totalEventCountInWindow = eventCount;
+                        long totalEventCount = CalculatePerformanceStreamProcessorExtension.totalEventCount;
+                        long totalEventTimeInWIndow = totalWindowEventTime;
                         long totalTime = totalTimeSpent;
 
                         BothFileWriting
-                                file = new BothFileWriting(firstTupleTime, RECORDWINDOW, totalEvent,
-                                                           event, currentTime, value, fstream, time, totalTime,
-                                                           histogram, histogram2
-                        );
+                                file = new BothFileWriting(firstTupleTime, RECORD_WINDOW_SIZE, totalEventCount,
+                                                           totalEventCountInWindow, windowExpiredTime, timeSpentInWindow,
+                                                            fstream, totalEventTimeInWIndow, totalTime, histogram,
+                                                            windowHistogram);
 
                         executorService.submit(file);
-                        histogram2.reset();
-                        timeSpent = 0;
+                        windowHistogram.reset();
+                        totalWindowEventTime = 0;
                         startTime = -1;
                         eventCount = 0;
 
-                        if (!exitFlag && eventCountTotal == 10000000000000L) {
+                        if (!exitFlag && CalculatePerformanceStreamProcessorExtension.totalEventCount == 10000000000000L) {
                             log.info("Exit flag set");
                             setCompletedFlag(sequenceNumber);
                             exitFlag = true;

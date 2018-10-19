@@ -31,56 +31,69 @@ import java.io.Writer;
 public class BothFileWriting implements Runnable {
     private final Logger log = Logger.getLogger(BothFileWriting.class);
     private long firstTupleTime;
-    private int recordWindow;
-    private long currentTime;
-    private long value;
+    private int recordWindowSize;
+    private long windowExpiredTime;
+    private long timeSpentInWindow;
     private long eventCountTotal;
-    private long eventCount;
+    private long windowEventCount;
     private Writer fstream;
-    private long timeSpent;
+    private long totalWindowEventTime;
     private long totalTimeSpent;
     private Histogram histogram;
-    private Histogram histogram2;
+    private Histogram windowHistogram;
 
-    public BothFileWriting(long firstTupleTime, int recordWindow, long eventCountTotal, long
-            eventCount, long currentTime, long value, Writer fstream, long timeSpent, long totalTimeSpent, Histogram
-                                   histogram, Histogram histogram2) {
+    /**
+     * Constructor of file writing task
+     *
+     * @param firstTupleTime time when the first event started to getting processed
+     * @param recordWindowSize size of record window
+     * @param totalEventCount total event count processed
+     * @param windowEventCount event count processed within the window
+     * @param windowExpiredTime time at which window of length 'recordWindowSize' expired
+     * @param timeSpentInWindow time spend in the window
+     * @param fstream file stream for output file
+     * @param totalWindowEventTime sum of time spent for each event belongs to the current window
+     * @param totalTimeSpent total time spent for all the events
+     * @param histogram histogram for complete process
+     * @param windowHistogram histogram for window
+     */
+    public BothFileWriting(long firstTupleTime, int recordWindowSize, long totalEventCount, long
+            windowEventCount, long windowExpiredTime, long timeSpentInWindow, Writer fstream, long totalWindowEventTime,
+                           long totalTimeSpent, Histogram histogram, Histogram windowHistogram) {
         this.firstTupleTime = firstTupleTime;
-        this.recordWindow = recordWindow;
-        this.eventCountTotal = eventCountTotal;
-        this.eventCount = eventCount;
-        this.currentTime = currentTime;
-        this.value = value;
+        this.recordWindowSize = recordWindowSize;
+        this.eventCountTotal = totalEventCount;
+        this.windowEventCount = windowEventCount;
+        this.windowExpiredTime = windowExpiredTime;
+        this.timeSpentInWindow = timeSpentInWindow;
         this.fstream = fstream;
-        this.timeSpent = timeSpent;
+        this.totalWindowEventTime = totalWindowEventTime;
         this.totalTimeSpent = totalTimeSpent;
         this.histogram = histogram;
-        this.histogram2 = histogram2;
+        this.windowHistogram = windowHistogram;
     }
 
     @Override public void run() {
         try {
             fstream.write(
-                    (eventCountTotal / recordWindow) + "," + ((eventCount * 1000) / value) + ","
-                            +
-                            (eventCountTotal * 1000 / (currentTime - firstTupleTime)) + "," +
-                            ((currentTime - firstTupleTime) / 1000f) + ","
-                            + "" + eventCountTotal + "," + currentTime + "," + ((timeSpent * 1.0)
-                            / eventCount) +
-                            "," + ((totalTimeSpent * 1.0) / eventCountTotal) + "," + histogram
-                            .getValueAtPercentile
-                                    (90.0) + ","
-                            + histogram
-                            .getValueAtPercentile(95.0) + "," + histogram
-                            .getValueAtPercentile(99.0)
-                            + ","
-                            + "" + histogram2.getValueAtPercentile(90.0) + ","
-                            + "" + histogram2.getValueAtPercentile(95.0) + ","
-                            + "" + histogram2.getValueAtPercentile(99.0));
+                    (eventCountTotal / recordWindowSize) + "," +
+                            ((windowEventCount * 1000) / timeSpentInWindow) + "," +
+                            (eventCountTotal * 1000 / (windowExpiredTime - firstTupleTime)) + "," +
+                            ((windowExpiredTime - firstTupleTime) / 1000f) + "," +
+                            eventCountTotal + "," +
+                            windowExpiredTime + "," +
+                            ((totalWindowEventTime * 1.0) / windowEventCount) + "," +
+                            ((totalTimeSpent * 1.0) / eventCountTotal) + "," +
+                            histogram.getValueAtPercentile(90.0) + "," +
+                            histogram.getValueAtPercentile(95.0) + "," +
+                            histogram.getValueAtPercentile(99.0) + "," +
+                            windowHistogram.getValueAtPercentile(90.0) + "," +
+                            windowHistogram.getValueAtPercentile(95.0) + "," +
+                            windowHistogram.getValueAtPercentile(99.0));
             fstream.write("\r\n");
             fstream.flush();
         } catch (IOException ex) {
-            log.error("Error while writing into the file" + ex.getMessage(), ex);
+            log.error("Error while writing into the file : " + ex.getMessage(), ex);
         }
 
     }

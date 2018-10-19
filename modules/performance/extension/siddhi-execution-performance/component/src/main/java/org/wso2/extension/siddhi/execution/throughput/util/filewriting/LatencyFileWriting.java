@@ -37,41 +37,51 @@ public class LatencyFileWriting implements Runnable {
     private long eventCount;
     private Writer fstream;
     private Histogram histogram;
-    private Histogram histogram2;
+    private Histogram windowHistogram;
 
-    public LatencyFileWriting(int recordWindow, long eventCountTotal, long eventCount,
-                              long timeSpent, long totalTimeSpent, Histogram histogram, Histogram histogram2,
-                              Writer fstream) {
-        this.recordWindow = recordWindow;
-        this.eventCountTotal = eventCountTotal;
-        this.eventCount = eventCount;
-        this.timeSpent = timeSpent;
+    /**
+     * Constructor of file writing task
+     *
+     * @param recordWindowSize
+     * @param totalEventCount
+     * @param windowEventCount
+     * @param timeSpentInWindow
+     * @param totalTimeSpent
+     * @param histogram
+     * @param windowHistogram
+     * @param fstream
+     */
+    public LatencyFileWriting(int recordWindowSize, long totalEventCount, long windowEventCount, long timeSpentInWindow,
+                              long totalTimeSpent, Histogram histogram, Histogram windowHistogram, Writer fstream) {
+        this.recordWindow = recordWindowSize;
+        this.eventCountTotal = totalEventCount;
+        this.eventCount = windowEventCount;
+        this.timeSpent = timeSpentInWindow;
         this.totalTimeSpent = totalTimeSpent;
         this.histogram = histogram;
-        this.histogram2 = histogram2;
+        this.windowHistogram = windowHistogram;
         this.fstream = fstream;
     }
 
     @Override public void run() {
         try {
             fstream.write(
-                    ((eventCountTotal / recordWindow) + "," + timeSpent * 1.0
-                            / eventCount) +
-                            "," + ((totalTimeSpent * 1.0) / eventCountTotal) + "," +
-                            eventCountTotal + "," + timeSpent + "," + totalTimeSpent + "," + histogram
-                            .getValueAtPercentile
-                                    (90.0) + ","
-                            + histogram
-                            .getValueAtPercentile(95.0) + "," + histogram
-                            .getValueAtPercentile(99.0)
-                            + ","
-                            + "" + histogram2.getValueAtPercentile(90.0) + ","
-                            + "" + histogram2.getValueAtPercentile(95.0) + ","
-                            + "" + histogram2.getValueAtPercentile(99.0));
+                    ((eventCountTotal / recordWindow) + "," +
+                            timeSpent * 1.0 / eventCount) + "," +
+                            ((totalTimeSpent * 1.0) / eventCountTotal) + "," +
+                            eventCountTotal + "," +
+                            timeSpent + "," +
+                            totalTimeSpent + "," +
+                            histogram.getValueAtPercentile(90.0) + "," +
+                            histogram.getValueAtPercentile(95.0) + "," +
+                            histogram.getValueAtPercentile(99.0) + "," +
+                            windowHistogram.getValueAtPercentile(90.0) + "," +
+                            windowHistogram.getValueAtPercentile(95.0) + "," +
+                            windowHistogram.getValueAtPercentile(99.0));
             fstream.write("\r\n");
             fstream.flush();
         } catch (IOException ex) {
-            log.error("Error while writing into the file" + ex.getMessage(), ex);
+            log.error("Error while writing into the file : " + ex.getMessage(), ex);
         }
     }
 }
