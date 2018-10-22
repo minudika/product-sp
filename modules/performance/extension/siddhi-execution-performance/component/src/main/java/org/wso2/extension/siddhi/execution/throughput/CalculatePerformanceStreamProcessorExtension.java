@@ -101,8 +101,9 @@ import java.util.concurrent.ExecutorService;
 public class CalculatePerformanceStreamProcessorExtension extends StreamProcessor {
     private static final Logger log = Logger.getLogger(CalculatePerformanceStreamProcessorExtension.class);
     private static final int RECORDWINDOW = 5;
+    private static final long WARMUP_PERIOD = 600000; // 10 minutes
     private static final Histogram histogram = new Histogram(2);
-    private static final Histogram histogram2 = new Histogram(2);
+    private static final Histogram windowHistogram = new Histogram(2);
     private static long firstTupleTime = -1;
     private static String logDir = "./performance-results";
     private static long eventCountTotal = 0;
@@ -111,12 +112,14 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
     private static long totalTimeSpent = 0;
     private static long outputFileTimeStamp;
     private static long startTime = -1;
+    private static long globalStartTime = -1;
     private static Writer fstream = null;
     private static boolean exitFlag = false;
     private static int sequenceNumber = 0;
     private String executionType;
     private ExecutorService executorService;
     private boolean flag;
+    private boolean isWarmingUp = true;
 
     private static int setCompletedFlag(int sequenceNumber) {
         try {
@@ -281,7 +284,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
             default:
                 log.error("executionType should be either throughput or latency or both "
-                                  + "but found" + " " + executionType);
+                        + "but found" + " " + executionType);
         }
 
         nextProcessor.process(streamEventChunk);
@@ -306,7 +309,7 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
 
                     if (eventCount >= RECORDWINDOW) {
                         totalTimeSpent += timeSpent;
-                        histogram2.recordValue((timeSpent));
+                        windowHistogram.recordValue((timeSpent));
                         histogram.recordValue(timeSpent);
                         if (!flag) {
                             flag = true;
@@ -338,10 +341,10 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                         LatencyFileWriting file =
                                 new LatencyFileWriting(RECORDWINDOW, totalEvent, event,
                                                        time, totalTime, histogram,
-                                                       histogram2, fstream);
+                                        windowHistogram, fstream);
 
                         executorService.submit(file);
-                        histogram2.reset();
+                        windowHistogram.reset();
                         eventCount = 0;
                         timeSpent = 0;
                         if (!exitFlag && eventCountTotal == 100000000000L) {
@@ -430,52 +433,73 @@ public class CalculatePerformanceStreamProcessorExtension extends StreamProcesso
                         startTime = System.currentTimeMillis();
                     }
 
+                    if (globalStartTime == -1) {
+                        globalStartTime = System.currentTimeMillis();
+                    }
+
                     long currentTime = System.currentTimeMillis();
                     long iijTimestamp = (Long) (attributeExpressionExecutors[0].execute(streamEvent));
                     timeSpent += (currentTime - iijTimestamp);
                     eventCount++;
                     eventCountTotal++;
 
+                    if (currentTime - globalStartTime > WARMUP_PERIOD) {
+                        if (isWarmingUp) {
+                            windowHistogram.reset();
+                            histogram.reset();
+                            firstTupleTime = -1;
+                            startTime  = -1;
+                            timeSpent = 0;
+                            eventCount = 0;
+                            eventCountTotal = 0;
+                            totalTimeSpent = 0;
+                            isWarmingUp = false;
+                            log.info("Warm-up period expired..");
+                        }
+                    }
+
                     if (eventCount == RECORDWINDOW) {
                         currentTime = System.currentTimeMillis();
                         long value = currentTime - startTime;
                         totalTimeSpent += timeSpent;
-                        histogram2.recordValue(timeSpent);
+                        windowHistogram.recordValue(timeSpent);
                         histogram.recordValue(timeSpent);
 
-                        if (!flag) {
-                            flag = true;
-                            fstream.write("Id, Throughput in this window (thousands events/second), Entire "
-                                                  + "throughput for the run (thousands events/second), Total "
-                                                  + "elapsed time(s),Total Events,CurrentTime,Average "
-                                                  + "latency "
-                                                  +
-                                                  "per event in this window(ms), Entire Average latency per "
-                                                  + "event for the run(ms), "
-                                                  + "AVG latency from start (90),"
-                                                  + "" + "AVG latency from start(95), "
-                                                  + "AVG latency from start "
-                                                  + "(99)," + "AVG latency in this "
-                                                  + "window(90)," + "AVG latency in this window(95),"
-                                                  + "AVG latency "
-                                                  + "in this window(99)");
-                            fstream.write("\r\n");
-                            fstream.flush();
+                        if (!isWarmingUp) {
+                            if (!flag) {
+                                flag = true;
+                                fstream.write("Id, Throughput in this window (thousands events/second), Entire "
+                                        + "throughput for the run (thousands events/second), Total "
+                                        + "elapsed time(s),Total Events,CurrentTime,Average "
+                                        + "latency "
+                                        +
+                                        "per event in this window(ms), Entire Average latency per "
+                                        + "event for the run(ms), "
+                                        + "AVG latency from start (90),"
+                                        + "" + "AVG latency from start(95), "
+                                        + "AVG latency from start "
+                                        + "(99)," + "AVG latency in this "
+                                        + "window(90)," + "AVG latency in this window(95),"
+                                        + "AVG latency "
+                                        + "in this window(99)");
+                                fstream.write("\r\n");
+                                fstream.flush();
+                            }
+
+                            long event = eventCount;
+                            long totalEvent = eventCountTotal;
+                            long time = timeSpent;
+                            long totalTime = totalTimeSpent;
+
+                            BothFileWriting
+                                    file = new BothFileWriting(firstTupleTime, RECORDWINDOW, totalEvent,
+                                    event, currentTime, value, fstream, time, totalTime,
+                                    histogram, windowHistogram
+                            );
+
+                            executorService.submit(file);
                         }
-
-                        long event = eventCount;
-                        long totalEvent = eventCountTotal;
-                        long time = timeSpent;
-                        long totalTime = totalTimeSpent;
-
-                        BothFileWriting
-                                file = new BothFileWriting(firstTupleTime, RECORDWINDOW, totalEvent,
-                                                           event, currentTime, value, fstream, time, totalTime,
-                                                           histogram, histogram2
-                        );
-
-                        executorService.submit(file);
-                        histogram2.reset();
+                        windowHistogram.reset();
                         timeSpent = 0;
                         startTime = -1;
                         eventCount = 0;

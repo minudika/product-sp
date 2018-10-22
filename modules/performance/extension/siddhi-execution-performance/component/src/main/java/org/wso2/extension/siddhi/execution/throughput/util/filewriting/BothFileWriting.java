@@ -40,11 +40,11 @@ public class BothFileWriting implements Runnable {
     private long timeSpent;
     private long totalTimeSpent;
     private Histogram histogram;
-    private Histogram histogram2;
+    private Histogram windowHistogram;
 
     public BothFileWriting(long firstTupleTime, int recordWindow, long eventCountTotal, long
             eventCount, long currentTime, long value, Writer fstream, long timeSpent, long totalTimeSpent, Histogram
-                                   histogram, Histogram histogram2) {
+                                   histogram, Histogram windowHistogram) {
         this.firstTupleTime = firstTupleTime;
         this.recordWindow = recordWindow;
         this.eventCountTotal = eventCountTotal;
@@ -55,7 +55,7 @@ public class BothFileWriting implements Runnable {
         this.timeSpent = timeSpent;
         this.totalTimeSpent = totalTimeSpent;
         this.histogram = histogram;
-        this.histogram2 = histogram2;
+        this.windowHistogram = windowHistogram;
     }
 
     @Override public void run() {
@@ -74,9 +74,9 @@ public class BothFileWriting implements Runnable {
                             .getValueAtPercentile(95.0) + "," + histogram
                             .getValueAtPercentile(99.0)
                             + ","
-                            + "" + histogram2.getValueAtPercentile(90.0) + ","
-                            + "" + histogram2.getValueAtPercentile(95.0) + ","
-                            + "" + histogram2.getValueAtPercentile(99.0));
+                            + "" + windowHistogram.getValueAtPercentile(90.0) + ","
+                            + "" + windowHistogram.getValueAtPercentile(95.0) + ","
+                            + "" + windowHistogram.getValueAtPercentile(99.0));
             fstream.write("\r\n");
             fstream.flush();
         } catch (IOException ex) {
